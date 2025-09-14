@@ -53,7 +53,8 @@ class AnimationGeneratorApp:
         
         # 简化图像相关属性
         self.image = None
-        self.image_path = None
+        self.image_path = None  # 首个图片路径，用于预览
+        self.image_paths = []    # 支持多张图片
         self.preview_photo = None
         
         # 绑定窗口关闭事件
@@ -220,20 +221,24 @@ class AnimationGeneratorApp:
 
     def upload_image(self):
         """上传图片"""
-        file_path = filedialog.askopenfilename(
+        file_paths = filedialog.askopenfilenames(
             filetypes=[
                 ("图片文件", "*.png;*.gif;*.jpg;*.jpeg"),
                 ("所有文件", "*.*")
             ]
         )
         
-        if file_path:
+        if file_paths:
             try:
-                self.image_path = file_path
-                self.image = Image.open(file_path)
+                self.image_paths = list(file_paths)
+                self.image_path = self.image_paths[0]
+                self.image = Image.open(self.image_path)
                 
                 # 更新文件名显示
-                filename = os.path.basename(file_path)
+                if len(self.image_paths) == 1:
+                    filename = os.path.basename(self.image_path)
+                else:
+                    filename = f"{len(self.image_paths)} 个文件"
                 self.file_label.configure(text=filename)
                 
                 # 自动填充参数
@@ -266,8 +271,11 @@ class AnimationGeneratorApp:
         self.entries["texture_width"].insert(0, str(width))
         self.entries["texture_height"].insert(0, str(height))
         
-        # 如果是GIF，自动设置帧数
-        frame_count = getattr(self.image, "n_frames", 1)
+        # 自动设置帧数
+        if len(self.image_paths) > 1:
+            frame_count = len(self.image_paths)
+        else:
+            frame_count = getattr(self.image, "n_frames", 1)
         self.entries["frame_count"].delete(0, "end")
         self.entries["frame_count"].insert(0, str(frame_count))
 
@@ -462,10 +470,10 @@ class AnimationGeneratorApp:
                 json.dump(animation, f, indent=4, ensure_ascii=False)
             
             # 处理图片
-            if self.image_path:
+            if self.image_paths:
                 output_image = os.path.join(model_dir, f"{params['texture_name']}.png")
                 ImageProcessor.process_image(
-                    self.image_path,
+                    self.image_paths if len(self.image_paths) > 1 else self.image_paths[0],
                     output_image,
                     params["frame_count"]
                 )
@@ -489,40 +497,35 @@ class AnimationGeneratorApp:
 
     def on_drop(self, event):
         """处理文件拖放"""
-        file_path = event.data
-        # 去除花括号（如果有）
-        if file_path.startswith('{') and file_path.endswith('}'):
-            file_path = file_path[1:-1]
-        
-        # 检查文件类型
-        if file_path.lower().endswith(('.png', '.gif', '.jpg', '.jpeg')):
+        files = self.root.tk.splitlist(event.data)
+        images = [f for f in files if f.lower().endswith((".png", ".gif", ".jpg", ".jpeg"))]
+        if images:
             try:
-                self.image_path = file_path
-                self.image = Image.open(file_path)
-                
-                # 更新文件名显示
-                filename = os.path.basename(file_path)
+                self.image_paths = images
+                self.image_path = images[0]
+                self.image = Image.open(self.image_path)
+
+                if len(images) == 1:
+                    filename = os.path.basename(self.image_path)
+                else:
+                    filename = f"{len(images)} 个文件"
                 self.file_label.configure(text=filename)
-                
-                # 自动填充参数
+
                 self.auto_fill_image_info()
-                
-                # 更新预览
                 self.update_preview()
-                
+
             except Exception as e:
                 CTkMessagebox(
                     title="错误",
                     message=f"无法加载图片：{str(e)}",
-                    icon="cancel"
+                    icon="cancel",
                 )
         else:
             CTkMessagebox(
                 title="错误",
                 message="请拖入图片文件 (PNG/GIF/JPG)",
-                icon="cancel"
+                icon="cancel",
             )
-
     def load_section_data(self):
         """加载分段数据"""
         try:
